@@ -46,18 +46,13 @@ public class DistributedLock {
             long end = System.currentTimeMillis() + acquireTimeout;
             while (System.currentTimeMillis() < end) {
                 if (conn.setnx(lockKey, identifier) == 1) {
-                    System.out.println("线程"+Thread.currentThread().getName()+"----------获得锁----------");
                     Long expire = conn.expire(lockKey, lockExpire);
-                    System.out.println("$$$$$$$$$$$$$$$---------"+expire);
                     // 返回value值，用于释放锁时间确认
                     retIdentifier = identifier;
                     return retIdentifier;
-                }else{
-                    System.out.println("线程"+Thread.currentThread().getName()+"等待锁");
                 }
                 // 返回-1代表key没有设置超时时间，为key设置一个超时时间
                 if (conn.ttl(lockKey) == -1) {
-                    System.out.println("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
                     conn.expire(lockKey, lockExpire);
                 }
 
@@ -92,19 +87,17 @@ public class DistributedLock {
             while (true) {
                 // 监视lock，准备开始事务
                 String watch = conn.watch(lockKey);
-                System.out.println(watch);
                 // 通过前面返回的value值判断是不是该锁，若是该锁，则删除，释放锁
                 if (identifier.equals(conn.get(lockKey))) {
                     Transaction transaction = conn.multi();
                     transaction.del(lockKey);
-                    System.out.println("线程" + Thread.currentThread().getName() + "**********释放锁***********");
                     List<Object> results = transaction.exec();
                     if (results == null) {
                         continue;
                     }
                     retFlag = true;
                 }
-                String unwatch = conn.unwatch();
+                 conn.unwatch();
                 break;
             }
         } catch (JedisException e) {

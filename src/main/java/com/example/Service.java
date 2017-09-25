@@ -34,12 +34,6 @@ public class Service {
     public void seckill()  {
         // 返回锁的value值，供释放锁时候进行判断
         String indentifier = lock.lockWithTimeout("resource", 5000, 1000);
-        System.out.println(Thread.currentThread().getName() + "获得了锁");
-        try {
-            Thread.sleep(10);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
         System.out.println(--n);
 
         lock.releaseLock("resource", indentifier);
