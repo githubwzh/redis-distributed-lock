@@ -3,6 +3,12 @@ package com.example;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
+import redis.clients.jedis.Transaction;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * ClassDescribe:
@@ -14,6 +20,18 @@ import redis.clients.jedis.JedisPoolConfig;
 public class Service {
     private static JedisPool pool = null;
 
+    public static Map<Long,StockInfo> map = new HashMap<Long, StockInfo>(){
+        {
+            for(long i=1;i<11;i++){
+                StockInfo stockInfo = new StockInfo();
+                stockInfo.setStockid(i);
+                stockInfo.setStocknum(0);
+                stockInfo.setPickoutnum(0);
+                put(i,stockInfo);
+            }
+        }
+    };
+
     static {
         JedisPoolConfig config = new JedisPoolConfig();
         // 设置最大连接数
@@ -21,7 +39,7 @@ public class Service {
         // 设置最大空闲数
         config.setMaxIdle(8);
         // 设置最大等待时间
-        config.setMaxWaitMillis(1000 * 100);
+        config.setMaxWaitMillis(3600);
         // 在borrow一个jedis实例时，是否需要验证，若为true，则所有jedis实例均是可用的
         config.setTestOnBorrow(true);
         pool = new JedisPool(config, "127.0.0.1", 6379, 3000);
@@ -29,13 +47,116 @@ public class Service {
 
     DistributedLock lock = new DistributedLock(pool);
 
+    public static void main(String[] args) {
+        Jedis jedis = pool.getResource();
+        String lockKey = "lockKey";
+        String watch = jedis.watch(lockKey);
+        System.out.println(watch+"******");
+        transcationTest(jedis,lockKey,"wzh1");
+        transcationTest(jedis, lockKey,"wzh3");
+    }
+    private static  void transcationTest(Jedis jedis, String lockKey, String name){
+        Transaction transaction = jedis.multi();
+        try {
+            Thread.sleep(10000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        transaction.set(lockKey,name);
+        System.out.println(jedis.watch(lockKey));
+        List<Object> results = transaction.exec();
+        if (results == null) {
+            System.out.println("------事物执行结果-null---"+results);
+        }else{
+            System.out.println("------事物执行结果----"+results);
+        }
+    }
     int n = 500;
 
+    /**
+     * 模拟秒杀商品
+     */
     public void seckill()  {
         // 返回锁的value值，供释放锁时候进行判断
-        String indentifier = lock.lockWithTimeout("resource", 5000, 1000);
-        System.out.println(--n);
-
-        lock.releaseLock("resource", indentifier);
+        String indentifier = null;
+        try {
+            indentifier = lock.lockWithTimeout("resource", 5000, 1000);
+            System.out.println(--n);
+            lock.releaseLock("resource", indentifier);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
+
+    /**
+     * 模拟单库存并发操作
+     */
+    public void processStockInfo(StockInfo stockInfo)  {
+        String lockname = "stockinfo："+stockInfo.getStockid();
+        // 返回锁的value值，供释放锁时候进行判断,获取锁的时间为10秒，锁过期时间60秒
+        String indentifier = null;
+        try {
+            indentifier = lock.lockWithTimeout(lockname, 10000, 60000);
+            System.out.println("------锁返回值---------"+indentifier);
+            StockInfo currStockInfo = Service.map.get(stockInfo.getStockid());
+            System.out.println("操作前的库存："+currStockInfo);
+            currStockInfo.setStocknum(currStockInfo.getStocknum()+1);
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            lock.releaseLock(lockname, indentifier);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+    public void processStockInfoList(List<StockInfo> stockInfos)  {
+        try {
+            String indentifier = null;
+            for(StockInfo stockInfo:stockInfos){
+
+            String lockname = "stockinfo："+stockInfo.getStockid();
+            // 返回锁的value值，供释放锁时候进行判断,获取锁的时间为10秒，锁过期时间60秒
+                indentifier = lock.lockWithTimeout(lockname, 5000, 60000);
+                if(indentifier == null){
+                    throw new Exception("---部分获得锁失败---");
+                }
+            }
+            List<StockInfo> stockInfos2 = new ArrayList<StockInfo>();
+            for(StockInfo stockInfo:stockInfos){
+                StockInfo currStockInfo = Service.map.get(stockInfo.getStockid());
+                stockInfos2.add(currStockInfo);
+
+            }
+            List<StockInfo> stockInfos1 = new ArrayList<StockInfo>();
+            for(StockInfo stockInfo:stockInfos){
+                StockInfo currStockInfo = Service.map.get(stockInfo.getStockid());
+                currStockInfo.setStocknum(currStockInfo.getStocknum()+1);
+                stockInfos1.add(currStockInfo);
+            }
+//            try {
+//                Thread.sleep(200);
+//            } catch (InterruptedException e) {
+//                e.printStackTrace();
+//            }
+            for(StockInfo stockInfo:stockInfos){
+                String lockname = "stockinfo："+stockInfo.getStockid();
+                lock.releaseLock(lockname, indentifier);
+                System.out.println("@@@@@@localname@@@@"+Thread.currentThread().getName()+"------"+lockname);
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+public void lockArrays(){
+    String[] parametters = {"wzh10","wzh11","wzh12"};
+    try {
+        lock.lockWithTimeoutArray(parametters,5000,6000);
+    } catch (Exception e) {
+        e.printStackTrace();
+    }
+}
+
 }

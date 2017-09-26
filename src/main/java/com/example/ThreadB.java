@@ -7,26 +7,26 @@ package com.example;
  * Since
  * To change this template use File | Settings | File Templates.
  */
-class ThreadA extends Thread {
+class ThreadB extends Thread {
     private Service service;
 
-    public ThreadA(Service service) {
+    public ThreadB(Service service) {
         this.service = service;
     }
 
     @Override
     public void run() {
-        service.seckill();
+        StockInfo stockInfoPara = new StockInfo() ;
+        stockInfoPara.setStockid(3L);
+        service.processStockInfo(stockInfoPara);
     }
 }
-
-class Test2 {
+class Test3 {
     public static void main(String[] args) {
         Service service = new Service();
         for (int i = 0; i < 50; i++) {
-            ThreadA threadA = new ThreadA(service);
-            threadA.start();
+            ThreadB threadB = new ThreadB(service);
+            threadB.start();
         }
     }
 }
-
