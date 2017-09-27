@@ -5,7 +5,9 @@ import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.Transaction;
 import redis.clients.jedis.exceptions.JedisException;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -46,16 +48,13 @@ public class DistributedLock {
             long end = System.currentTimeMillis() + acquireTimeout;
             while (System.currentTimeMillis() < end) {
                 if (conn.setnx(lockKey, identifier) == 1) {
-                    System.out.println("suiji----"+Thread.currentThread().getName()+identifier);
                     conn.expire(lockKey, lockExpire);
                     // 返回value值，用于释放锁时间确认
                     retIdentifier = identifier;
-                    System.out.println("*******"+Thread.currentThread().getName()+"-------"+identifier);
                     return retIdentifier;
                 }
                 // 返回-1代表key没有设置超时时间，为key设置一个超时时间
                 if (conn.ttl(lockKey) == -1) {
-                    System.out.println("----设置超时时间"+lockKey);
                     conn.expire(lockKey, lockExpire);
                 }
                 try {
@@ -64,7 +63,7 @@ public class DistributedLock {
                     Thread.currentThread().interrupt();
                 }
             }
-            throw new Exception("获取锁超时，用时："+acquireTimeout+"秒");
+            throw new Exception("获取锁超时，用时："+acquireTimeout+"毫秒");
         } catch (JedisException e) {
             e.printStackTrace();
         } finally {
@@ -82,58 +81,72 @@ public class DistributedLock {
      *
      * @return 锁标识
      */
-    public String lockWithTimeoutArray(String[] locknames, long acquireTimeout, long timeout) throws Exception {
+    int count =100;
+    public Map<String,String> lockWithTimeout(String[] locknames, long acquireTimeout, long timeout) throws Exception {
         Jedis conn = null;
-        String retIdentifier = null;
+        conn = jedisPool.getResource();
+        Map<String,String> locknameIdentifierMap = new HashMap<String, String>();
+        String preLockname = "lock:";
+        //为锁名称加前缀
+        for(int i=0;i<locknames.length;i++){
+            locknames[i] = preLockname + locknames[i];
+        }
         // 获取锁的超时时间，超过这个时间则放弃获取锁
         try {
             long end = System.currentTimeMillis() + acquireTimeout;
+            int  lockExpire = (int) (timeout / 1000);
             while (System.currentTimeMillis() < end) {
                 // 获取连接
-                conn = jedisPool.getResource();
                 //1、监视locknames 2、查询redis，看是否有被占用的锁，如果有等待5秒重新查询。注意顺序
                 while (true) {
-                    boolean isUnique = uniqueIdentify(conn, locknames);
+                    boolean isUnique = uniqueIdentify(conn, locknames,lockExpire);
                     if (isUnique) {//监视锁,所有的锁没有被占用
-                        System.out.println("**********---*******");
+                        System.out.println("线程："+Thread.currentThread().getName()+"准备就绪，开始获取锁");
                         break;
+                    }else{
+                        try {
+                            Thread.sleep(10);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
                     }
                 }
                 Transaction transaction = conn.multi();
-                String[] identifiers = new String[locknames.length];
-                String[] lockKeys = new String[locknames.length];
-                int  lockExpire = (int) (timeout / 1000);
                 for (int i = 0; i < locknames.length; i++) {
-                    String lockname = locknames[i];
-                    // 随机生成一个value
-                    identifiers[i] = UUID.randomUUID().toString();
-                    // 锁名，即key值
-                     lockKeys[i] = "lock:" + lockname;
+                    String identifier = UUID.randomUUID().toString(); // 随机生成一个value
+                    locknameIdentifierMap.put(locknames[i],identifier);//释放锁用
+                    transaction.setnx(locknames[i], identifier);
+                }
+                List<Object> execRes = transaction.exec();
+                conn.unwatch();
+                boolean commiteSuccess = true;
+                if(execRes == null){
+                    System.out.println("线程："+Thread.currentThread().getName()+"获取锁【失败】");
+                    continue;
+                }
+                for(Object obj:execRes){
+                    System.out.println("线程："+Thread.currentThread().getName()+"事物执行返回值："+obj);
+                    Long res =(Long) obj;
+                    if(res == 1){
+                        continue;
+                    }
+                    commiteSuccess = false;
+                }
+                if(commiteSuccess){
+                    System.out.println("序号【"+(--count)+"】线程："+Thread.currentThread().getName()+"获取锁【成功】");
                     // 超时时间，上锁后超过此时间则自动释放锁
-
-                    transaction.setnx(lockKeys[i], identifiers[i]);
-                    transaction.expire(lockKeys[i], lockExpire);
-                    List<Object> exec = transaction.exec();
-                    conn.unwatch();
-                    for(Object obj:exec){
-                        System.out.println("----obj:"+obj);
+                    for (String lockname:locknames){
+                        conn.expire(lockname,lockExpire);
+                    }
+                    return locknameIdentifierMap;
+                }else{
+                    //没有全部成功,释放锁
+                    for (String lockname:locknames){
+                        conn.expire(lockname,0);
                     }
                 }
-                // 返回-1代表key没有设置超时时间，为key设置一个超时时间
-                for(String lockKey:lockKeys){
-                    if (conn.ttl(lockKey) == -1) {
-                        System.out.println("----设置超时时间" + lockKey);
-                        conn.expire(lockKey, lockExpire);
-                    }
-                }
-                try {
-                    Thread.sleep(10);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-
             }
-            throw new Exception("获取锁超时，用时："+acquireTimeout+"秒");
+            throw new Exception("获取锁超时，用时："+acquireTimeout+"毫秒");
         } catch (JedisException e) {
             e.printStackTrace();
         } finally {
@@ -141,20 +154,23 @@ public class DistributedLock {
                 conn.close();
             }
         }
-        return retIdentifier;
+        return null;
     }
 
     /**
      * 被监视的锁，没有被占用，返回true，否则取消监视，返回false。
      * @param conn
      * @param locknames
-     * @return
+     *@param lockExpire  @return
      */
-    private boolean uniqueIdentify(Jedis conn, String[] locknames) {
+    private boolean uniqueIdentify(Jedis conn, String[] locknames, int lockExpire) {
         conn.watch(locknames);
         for(String lockname:locknames){
             String s = conn.get(lockname);
             if(s != null){
+                if(conn.ttl(lockname)==-1){ // 返回-1代表key没有设置超时时间，为key设置一个超时时间
+                    conn.expire(lockname,lockExpire);
+                }
                 conn.unwatch();
               return false;
             }
@@ -176,7 +192,7 @@ public class DistributedLock {
             conn = jedisPool.getResource();
             while (true) {
                 // 监视lock，准备开始事务
-                String watch = conn.watch(lockKey);
+                 conn.watch(lockKey);
                 // 通过前面返回的value值判断是不是该锁，若是该锁，则删除，释放锁
                 if (identifier.equals(conn.get(lockKey))) {
                     Transaction transaction = conn.multi();
@@ -190,6 +206,52 @@ public class DistributedLock {
                  conn.unwatch();
                 break;
             }
+        } catch (JedisException e) {
+            e.printStackTrace();
+        } finally {
+            if (conn != null) {
+                conn.close();
+            }
+        }
+        return retFlag;
+    }
+    /**
+     * 释放锁
+     * @param  lockNameIdentifierMap key: 锁的key,value:释放锁的标识
+     * @return
+     */
+    public boolean releaseLock(Map<String,String> lockNameIdentifierMap) throws Exception{
+        Jedis conn = null;
+
+        boolean retFlag = false;
+        try {
+            conn = jedisPool.getResource();
+            lockNameIdentifierMap.entrySet();
+            for(Map.Entry<String,String> entry:lockNameIdentifierMap.entrySet()){
+                String lockKey = entry.getKey();
+                String identifier = entry.getValue();
+                while (true) {
+                    // 监视lock，准备开始事务
+                    String watch = conn.watch(lockKey);
+                    // 通过前面返回的value值判断是不是该锁，若是该锁，则删除，释放锁
+                    if (identifier.equals(conn.get(lockKey))) {
+                        Transaction transaction = conn.multi();
+                        transaction.del(lockKey);
+                        List<Object> results = transaction.exec();
+                        if (results == null ) {
+                            continue;
+                        }
+                    }else{
+                        //释放时，发现要释放的锁，不是该线程创建的锁对象，原因有可能业务逻辑用的时间超过，锁的有效时间，
+                        // 或者某些原因长时间阻塞
+                        throw new Exception("---释放的锁不是本线程创建的----");
+                    }
+                    conn.unwatch();
+                    break;
+                }
+
+            }
+            retFlag = true;
         } catch (JedisException e) {
             e.printStackTrace();
         } finally {

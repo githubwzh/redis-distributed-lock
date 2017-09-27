@@ -20,14 +20,17 @@ import java.util.Map;
 public class Service {
     private static JedisPool pool = null;
 
-    public static Map<Long,StockInfo> map = new HashMap<Long, StockInfo>(){
+    public static Map<Long, StockInfo> map = new HashMap<Long, StockInfo>() {
+        /**
+         * 0-99共一百个库存
+         */
         {
-            for(long i=1;i<11;i++){
+            for (long i = 0; i < 15; i++) {
                 StockInfo stockInfo = new StockInfo();
                 stockInfo.setStockid(i);
                 stockInfo.setStocknum(0);
                 stockInfo.setPickoutnum(0);
-                put(i,stockInfo);
+                put(i, stockInfo);
             }
         }
     };
@@ -51,32 +54,34 @@ public class Service {
         Jedis jedis = pool.getResource();
         String lockKey = "lockKey";
         String watch = jedis.watch(lockKey);
-        System.out.println(watch+"******");
-        transcationTest(jedis,lockKey,"wzh1");
-        transcationTest(jedis, lockKey,"wzh3");
+        System.out.println(watch + "******");
+        transcationTest(jedis, lockKey, "wzh1");
+        transcationTest(jedis, lockKey, "wzh3");
     }
-    private static  void transcationTest(Jedis jedis, String lockKey, String name){
+
+    private static void transcationTest(Jedis jedis, String lockKey, String name) {
         Transaction transaction = jedis.multi();
         try {
             Thread.sleep(10000);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
-        transaction.set(lockKey,name);
+        transaction.set(lockKey, name);
         System.out.println(jedis.watch(lockKey));
         List<Object> results = transaction.exec();
         if (results == null) {
-            System.out.println("------事物执行结果-null---"+results);
-        }else{
-            System.out.println("------事物执行结果----"+results);
+            System.out.println("------事物执行结果-null---" + results);
+        } else {
+            System.out.println("------事物执行结果----" + results);
         }
     }
+
     int n = 500;
 
     /**
      * 模拟秒杀商品
      */
-    public void seckill()  {
+    public void seckill() {
         // 返回锁的value值，供释放锁时候进行判断
         String indentifier = null;
         try {
@@ -91,16 +96,15 @@ public class Service {
     /**
      * 模拟单库存并发操作
      */
-    public void processStockInfo(StockInfo stockInfo)  {
-        String lockname = "stockinfo："+stockInfo.getStockid();
+    public void processStockInfo(StockInfo stockInfo) {
+        String lockname = "stockinfo：" + stockInfo.getStockid();
         // 返回锁的value值，供释放锁时候进行判断,获取锁的时间为10秒，锁过期时间60秒
         String indentifier = null;
         try {
             indentifier = lock.lockWithTimeout(lockname, 10000, 60000);
-            System.out.println("------锁返回值---------"+indentifier);
             StockInfo currStockInfo = Service.map.get(stockInfo.getStockid());
-            System.out.println("操作前的库存："+currStockInfo);
-            currStockInfo.setStocknum(currStockInfo.getStocknum()+1);
+            System.out.println("操作前的库存：" + currStockInfo);
+            currStockInfo.setStocknum(currStockInfo.getStocknum() + 1);
             try {
                 Thread.sleep(200);
             } catch (InterruptedException e) {
@@ -111,52 +115,29 @@ public class Service {
             e.printStackTrace();
         }
     }
-    public void processStockInfoList(List<StockInfo> stockInfos)  {
+
+    public void lockArrays(List<StockInfo> stockInfos) {
         try {
-            String indentifier = null;
-            for(StockInfo stockInfo:stockInfos){
-
-            String lockname = "stockinfo："+stockInfo.getStockid();
-            // 返回锁的value值，供释放锁时候进行判断,获取锁的时间为10秒，锁过期时间60秒
-                indentifier = lock.lockWithTimeout(lockname, 5000, 60000);
-                if(indentifier == null){
-                    throw new Exception("---部分获得锁失败---");
+            String[] locknames = new String[stockInfos.size()];
+            for (int i = 0; i < locknames.length; i++) {
+                Long stockid = stockInfos.get(i).getStockid();
+                locknames[i] = stockid.toString();
+            }
+            //获取锁超时时间30秒，锁被获取后有效期60秒。
+            Map<String, String> stringStringMap = lock.lockWithTimeout(locknames, 30000, 60000);
+            if (stringStringMap != null && stringStringMap.size() > 0) {
+                //获得锁成功，执行业务逻辑
+                System.out.println("--------处理业务逻辑---start-----" + Thread.currentThread().getName() + "--***--" + Service.map);
+                for (StockInfo stockInfo : stockInfos) {
+                    StockInfo stockInfoPara = Service.map.get(stockInfo.getStockid());//模拟数据库取数据，更新库存
+                    Thread.sleep(200);
+                    stockInfoPara.setStocknum(stockInfoPara.getStocknum() + 1);
                 }
+                System.out.println("--------处理业务逻辑---end-----" + Thread.currentThread().getName() + "--***--" + Service.map);
+                lock.releaseLock(stringStringMap);
             }
-            List<StockInfo> stockInfos2 = new ArrayList<StockInfo>();
-            for(StockInfo stockInfo:stockInfos){
-                StockInfo currStockInfo = Service.map.get(stockInfo.getStockid());
-                stockInfos2.add(currStockInfo);
-
-            }
-            List<StockInfo> stockInfos1 = new ArrayList<StockInfo>();
-            for(StockInfo stockInfo:stockInfos){
-                StockInfo currStockInfo = Service.map.get(stockInfo.getStockid());
-                currStockInfo.setStocknum(currStockInfo.getStocknum()+1);
-                stockInfos1.add(currStockInfo);
-            }
-//            try {
-//                Thread.sleep(200);
-//            } catch (InterruptedException e) {
-//                e.printStackTrace();
-//            }
-            for(StockInfo stockInfo:stockInfos){
-                String lockname = "stockinfo："+stockInfo.getStockid();
-                lock.releaseLock(lockname, indentifier);
-                System.out.println("@@@@@@localname@@@@"+Thread.currentThread().getName()+"------"+lockname);
-            }
-
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
-public void lockArrays(){
-    String[] parametters = {"wzh10","wzh11","wzh12"};
-    try {
-        lock.lockWithTimeoutArray(parametters,5000,6000);
-    } catch (Exception e) {
-        e.printStackTrace();
-    }
-}
-
 }

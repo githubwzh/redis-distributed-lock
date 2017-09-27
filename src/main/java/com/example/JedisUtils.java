@@ -34,7 +34,7 @@ public class JedisUtils {
         Service service = new Service();
         DistributedLock lock = new DistributedLock(pool) ;
         try {
-            lock.lockWithTimeoutArray(parametters,5000,6000);
+            lock.lockWithTimeout(parametters,5000,6000);
         } catch (Exception e) {
             e.printStackTrace();
         }
