@@ -38,50 +38,6 @@ public class JedisUtils {
         } catch (Exception e) {
             e.printStackTrace();
         }
-//        Jedis jedis = pool.getResource();
-//        String para = jedis.watch(parametters);
-//        for(String str:parametters){
-//            String s = jedis.get(str);
-//            if(s != null){
-//                System.out.println("---redis--has---this key:");
-//            }
-//
-//        }
-//        System.out.println("----para--watch:"+para);
-//        Transaction transaction = jedis.multi();
-//        Response<Set<String>> keys = transaction.keys("wzh*");
-//        if(true){
-//            Response<Long> wzh1 = transaction.setnx("wzh1", "11");
-//            transaction.setnx("wzh2","222");
-//            transaction.setnx("wzh3","333");
-//            try {
-//                Thread.sleep(10000);
-//            } catch (InterruptedException e) {
-//                e.printStackTrace();
-//            }
-//            transaction.setnx("wzh10","10");
-//            transaction.setnx("wzh11","11");
-//            transaction.setnx("wzh12","12");
-//
-//            transaction.setnx(parametters.toString(),"777");
-//            Response<Set<String>> keys2 = transaction.keys("wzh*");
-//            List<Object> exec = transaction.exec();
-//            System.out.println(exec);
-////            jedis.unwatch();
-//            Set<String> strings = keys.get();
-//            System.out.println("---执行前"+strings);
-//            Set<String> strings1 = keys2.get();
-//            System.out.println("---执行后"+strings1);
-//            System.out.println("wzh1------"+wzh1.get());
-//            try {
-//                transaction.close();
-//            } catch (IOException e) {
-//                e.printStackTrace();
-//            }
-//        }else{
-//            System.out.println("已经存在该key");
-//        }
-//        System.out.println(wzh);
     }
     /**
      * 获取缓存
@@ -245,9 +201,6 @@ public class JedisUtils {
      * @param jedis
      */
     public static void returnResource(Jedis jedis) {
-//        if (jedis != null) {
-//            jedisPool.returnResource(jedis);
-//        }
         try {
             if (jedis != null) {
                 jedis.close();

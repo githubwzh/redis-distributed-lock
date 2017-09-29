@@ -16,11 +16,12 @@ class ThreadB extends Thread {
 
     @Override
     public void run() {
-        StockInfo stockInfoPara = new StockInfo() ;
+        StockInfo stockInfoPara = new StockInfo();
         stockInfoPara.setStockid(3L);
         service.processStockInfo(stockInfoPara);
     }
 }
+
 class Test3 {
     public static void main(String[] args) {
         Service service = new Service();

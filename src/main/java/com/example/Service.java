@@ -105,11 +105,11 @@ public class Service {
             StockInfo currStockInfo = Service.map.get(stockInfo.getStockid());
             System.out.println("操作前的库存：" + currStockInfo);
             currStockInfo.setStocknum(currStockInfo.getStocknum() + 1);
-            try {
-                Thread.sleep(200);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
+//            try {
+//                Thread.sleep(200);
+//            } catch (InterruptedException e) {
+//                e.printStackTrace();
+//            }
             lock.releaseLock(lockname, indentifier);
         } catch (Exception e) {
             e.printStackTrace();
